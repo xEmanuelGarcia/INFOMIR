@@ -12,8 +12,36 @@ import requests
 from dotenv import load_dotenv
 
 load_dotenv()
-TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
-TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+# .get() em vez de [] -- numa instalacao nova o .env ainda nao existe, e o
+# painel (launcher.py) precisa conseguir abrir mesmo assim pra pedir essas
+# credenciais na aba Telegram, em vez de travar com KeyError na importacao.
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+SETTINGS_PATH = "settings.json"
+SETTINGS_DEFAULTS = {
+    "vigor_low_threshold_minutes": 15,
+    "periodic_report_minutes": 30,
+    "quest_notifications_enabled": True,
+}
+
+
+def load_settings() -> dict:
+    settings = dict(SETTINGS_DEFAULTS)
+    if os.path.exists(SETTINGS_PATH):
+        with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+            settings.update(json.load(f))
+    return settings
+
+
+def save_settings(settings: dict):
+    merged = load_settings()
+    merged.update(settings)
+    with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+        json.dump(merged, f, indent=2, ensure_ascii=False)
+
+
+_settings = load_settings()
 
 MONITOR_INDEX = 1
 JPEG_QUALITY = 85
@@ -28,7 +56,9 @@ ZONE_CONFIRM_THRESHOLD = 0.6
 ZONE_PENDING_CONFIRM_COUNT = 3
 ZONE_MIN_LENGTH = 8
 VIGOR_REGION = {"left": 138, "top": 104, "width": 24, "height": 13}
-VIGOR_LOW_THRESHOLD_MINUTES = 15
+VIGOR_LOW_THRESHOLD_MINUTES = _settings["vigor_low_threshold_minutes"]
+PERIODIC_REPORT_SECONDS = _settings["periodic_report_minutes"] * 60
+QUEST_NOTIFICATIONS_ENABLED = _settings["quest_notifications_enabled"]
 VIGOR_MAX_PLAUSIBLE_MINUTES = 48 * 60
 VIGOR_TOLERANCE_MINUTES = 2
 VIGOR_STATE_PATH = "vigor_state.json"

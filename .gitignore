@@ -3,10 +3,18 @@
 
 # calibracao e estado local (especifico da maquina/resolucao de cada um)
 config.json
+settings.json
 templates/
 known_zones.json
 last_stats.json
 *_state.json
+
+# build/empacotamento (gerados por pyinstaller/inno setup, nao sao codigo-fonte)
+build/
+dist/
+dist_test*/
+installer_output/
+*.spec
 
 # capturas de tela e evidencias (dados de gameplay, nao codigo)
 *.png

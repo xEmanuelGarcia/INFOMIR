@@ -18,6 +18,8 @@ from common import (
     COPPER_FEED_REGION,
     MISSION_REGION,
     MONITOR_INDEX,
+    PERIODIC_REPORT_SECONDS,
+    QUEST_NOTIFICATIONS_ENABLED,
     QUEST_ICON_REGION,
     QUEST_NAME_REGION,
     QUEST_OBJECTIVE_REGION,
@@ -58,7 +60,6 @@ HISTORY_SCORE_THRESHOLD = 0.25
 HISTORY_MAX_FILES = 30
 DEATH_SNAPSHOT_PATH = "death_snapshot.jpg"
 PERIODIC_SNAPSHOT_PATH = "periodic_snapshot.jpg"
-PERIODIC_REPORT_SECONDS = 30 * 60
 VIGOR_SNAPSHOT_PATH = "vigor_snapshot.jpg"
 MISSION_SNAPSHOT_PATH = "mission_snapshot.jpg"
 QUEST_SNAPSHOT_PATH = "quest_snapshot.jpg"
@@ -169,28 +170,29 @@ def main():
                 elif not mission_visible and not is_mission_alert_armed():
                     set_mission_alerted(False)
 
-                quest_name_crop = np.array(sct.grab(QUEST_NAME_REGION))[:, :, :3]
-                quest_obj_crop = np.array(sct.grab(QUEST_OBJECTIVE_REGION))[:, :, :3]
-                quest_icon_crop = np.array(sct.grab(QUEST_ICON_REGION))[:, :, :3]
+                if QUEST_NOTIFICATIONS_ENABLED:
+                    quest_name_crop = np.array(sct.grab(QUEST_NAME_REGION))[:, :, :3]
+                    quest_obj_crop = np.array(sct.grab(QUEST_OBJECTIVE_REGION))[:, :, :3]
+                    quest_icon_crop = np.array(sct.grab(QUEST_ICON_REGION))[:, :, :3]
 
-                quest_result = check_primary_quest_progress(quest_name_crop, quest_obj_crop)
-                icon_completed = check_quest_icon_completion(quest_icon_crop)
+                    quest_result = check_primary_quest_progress(quest_name_crop, quest_obj_crop)
+                    icon_completed = check_quest_icon_completion(quest_icon_crop)
 
-                if quest_result or icon_completed:
-                    if quest_result:
-                        quest_name, quest_objective = quest_result
-                    else:
-                        quest_name = read_quest_name(quest_name_crop)
-                        quest_objective, _ = read_quest_objective(quest_obj_crop)
-                    log.info(f"[missao primaria] {quest_objective} -> enviando Telegram")
-                    full = np.array(sct.grab(sct.monitors[MONITOR_INDEX]))[:, :, :3]
-                    save_snapshot(QUEST_SNAPSHOT_PATH, full)
-                    stats = format_stats_text(extract_stats(full))
-                    send_telegram_photo(
-                        QUEST_SNAPSHOT_PATH,
-                        f"Objetivo concluido: {quest_name} - {quest_objective}\n\n{stats}",
-                        log=log,
-                    )
+                    if quest_result or icon_completed:
+                        if quest_result:
+                            quest_name, quest_objective = quest_result
+                        else:
+                            quest_name = read_quest_name(quest_name_crop)
+                            quest_objective, _ = read_quest_objective(quest_obj_crop)
+                        log.info(f"[missao primaria] {quest_objective} -> enviando Telegram")
+                        full = np.array(sct.grab(sct.monitors[MONITOR_INDEX]))[:, :, :3]
+                        save_snapshot(QUEST_SNAPSHOT_PATH, full)
+                        stats = format_stats_text(extract_stats(full))
+                        send_telegram_photo(
+                            QUEST_SNAPSHOT_PATH,
+                            f"Objetivo concluido: {quest_name} - {quest_objective}\n\n{stats}",
+                            log=log,
+                        )
 
                 if is_periodic_report_due(PERIODIC_REPORT_SECONDS):
                     mark_periodic_report_sent()

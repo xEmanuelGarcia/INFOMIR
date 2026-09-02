@@ -1,12 +1,15 @@
 """
 Calibracao: quando a tela de morte do MIR4 estiver visivel (o jogo em modo
-janela/borderless, nao tela cheia exclusiva), volte pra este terminal e
-aperte ENTER. O script tira um print da tela inteira e abre uma janela pra
-voce selecionar (arrastando o mouse) a area da faixa vermelha de morte.
-Depois de selecionar, aperte ENTER (ou ESPACO) pra confirmar, ou C pra cancelar.
+janela/borderless, nao tela cheia exclusiva), clique OK na caixa de dialogo.
+O script tira um print da tela inteira e abre uma janela pra voce selecionar
+(arrastando o mouse) a area da faixa vermelha de morte. Depois de selecionar,
+aperte ENTER (ou ESPACO) pra confirmar, ou C pra cancelar.
 """
 import json
+import os
 import sys
+import tkinter as tk
+from tkinter import messagebox
 
 import cv2
 import mss
@@ -16,7 +19,6 @@ MONITOR_INDEX = 1  # monitor primario
 CONFIG_PATH = "config.json"
 TEMPLATE_PATH = "templates/death_template.png"
 
-import os
 os.makedirs("templates", exist_ok=True)
 
 
@@ -28,12 +30,23 @@ def grab_full_screen():
         return img, monitor
 
 
-def main():
-    print("Va para o jogo (modo janela/borderless, nao tela cheia exclusiva).")
-    print("Quando a tela de morte aparecer, volte pra este terminal e aperte ENTER.")
+def wait_for_confirmation() -> bool:
+    """Caixa de dialogo em vez de input() no console -- assim nao depende de
+    terminal, funciona igual quando empacotado como .exe sem console."""
+    root = tk.Tk()
+    root.withdraw()
+    proceed = messagebox.askokcancel(
+        "Calibração MIR4",
+        "Vá para o jogo (modo janela/borderless, não tela cheia exclusiva).\n\n"
+        "Quando a tela de morte estiver visível, clique OK aqui pra capturar o print.",
+    )
+    root.destroy()
+    return proceed
 
-    input()
-    print("Print capturado. Selecione a area da tela de morte na janela que abriu...")
+
+def main():
+    if not wait_for_confirmation():
+        return
 
     img, monitor = grab_full_screen()
 
@@ -42,8 +55,8 @@ def main():
 
     x, y, w, h = [int(v) for v in roi]
     if w == 0 or h == 0:
-        print("Selecao vazia, cancelando.")
-        sys.exit(1)
+        messagebox.showwarning("Calibração MIR4", "Seleção vazia, cancelando.")
+        return
 
     crop = img[y:y + h, x:x + w]
     cv2.imwrite(TEMPLATE_PATH, crop)
@@ -58,8 +71,10 @@ def main():
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
 
-    print(f"Salvo! Template: {TEMPLATE_PATH} | Config: {CONFIG_PATH}")
-    print("Agora rode: python watcher.py")
+    messagebox.showinfo(
+        "Calibração MIR4",
+        f"Salvo!\nTemplate: {TEMPLATE_PATH}\nConfig: {CONFIG_PATH}\n\nJá pode dar Play no painel.",
+    )
 
 
 if __name__ == "__main__":
