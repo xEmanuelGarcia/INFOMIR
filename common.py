@@ -6,6 +6,7 @@ import re
 import time
 
 import cv2
+import mss
 import numpy as np
 import pytesseract
 import requests
@@ -44,18 +45,63 @@ def save_settings(settings: dict):
 _settings = load_settings()
 
 MONITOR_INDEX = 1
+
+# Todas as regiões abaixo foram calibradas olhando a tela numa resolução de
+# referência (1920x1080). Como o layout do HUD do MIR4 é sempre o mesmo --
+# só muda de tamanho com a resolução --, guardamos os valores calibrados
+# nessa referência e escalamos pra resolução real da tela em tempo de
+# execução, em vez de fixar pixels absolutos. Numa tela 1920x1080 o fator de
+# escala é 1.0 (nenhuma mudança de comportamento); numa tela diferente, tudo
+# escala proporcionalmente.
+_REFERENCE_WIDTH = 1920
+_REFERENCE_HEIGHT = 1080
+
+
+def _detect_screen_size():
+    try:
+        with mss.mss() as sct:
+            monitor = sct.monitors[MONITOR_INDEX]
+            return monitor["width"], monitor["height"]
+    except Exception:
+        return _REFERENCE_WIDTH, _REFERENCE_HEIGHT
+
+
+SCREEN_WIDTH, SCREEN_HEIGHT = _detect_screen_size()
+_SCALE_X = SCREEN_WIDTH / _REFERENCE_WIDTH
+_SCALE_Y = SCREEN_HEIGHT / _REFERENCE_HEIGHT
+
+
+def _region(left, top, width, height) -> dict:
+    """Recebe coordenadas calibradas na resolucao de referencia e devolve o
+    recorte correspondente escalado pra resolucao real da tela atual."""
+    return {
+        "left": round(left * _SCALE_X),
+        "top": round(top * _SCALE_Y),
+        "width": round(width * _SCALE_X),
+        "height": round(height * _SCALE_Y),
+    }
+
+
+def scale_x(value):
+    return round(value * _SCALE_X)
+
+
+def scale_y(value):
+    return round(value * _SCALE_Y)
+
+
 JPEG_QUALITY = 85
 TESSERACT_PATH = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 XP_STATE_PATH = "xp_state.json"
 COPPER_STATE_PATH = "copper_state.json"
-COPPER_FEED_REGION = {"left": 0, "top": 985, "width": 300, "height": 95}
-ZONE_REGION = {"left": 1610, "top": 88, "width": 300, "height": 20}
+COPPER_FEED_REGION = _region(0, 985, 300, 95)
+ZONE_REGION = _region(1610, 88, 300, 20)
 ZONES_STATE_PATH = "known_zones.json"
 ZONE_MATCH_THRESHOLD = 0.84
 ZONE_CONFIRM_THRESHOLD = 0.6
 ZONE_PENDING_CONFIRM_COUNT = 3
 ZONE_MIN_LENGTH = 8
-VIGOR_REGION = {"left": 138, "top": 104, "width": 24, "height": 13}
+VIGOR_REGION = _region(138, 104, 24, 13)
 VIGOR_LOW_THRESHOLD_MINUTES = _settings["vigor_low_threshold_minutes"]
 PERIODIC_REPORT_SECONDS = _settings["periodic_report_minutes"] * 60
 QUEST_NOTIFICATIONS_ENABLED = _settings["quest_notifications_enabled"]
@@ -65,13 +111,15 @@ VIGOR_STATE_PATH = "vigor_state.json"
 DEATH_STATE_PATH = "death_state.json"
 LAST_STATS_PATH = "last_stats.json"
 PERIODIC_STATE_PATH = "periodic_state.json"
-MISSION_REGION = {"left": 1610, "top": 215, "width": 310, "height": 43}
+MISSION_REGION = _region(1610, 215, 310, 43)
 MISSION_STATE_PATH = "mission_state.json"
-QUEST_NAME_REGION = {"left": 1640, "top": 152, "width": 280, "height": 28}
-QUEST_OBJECTIVE_REGION = {"left": 1640, "top": 178, "width": 280, "height": 32}
+QUEST_NAME_REGION = _region(1640, 152, 280, 28)
+QUEST_OBJECTIVE_REGION = _region(1640, 178, 280, 32)
 QUEST_STATE_PATH = "quest_state.json"
-QUEST_ICON_REGION = {"left": 1650, "top": 148, "width": 35, "height": 32}
-QUEST_GLOW_PIXEL_THRESHOLD = 30
+QUEST_ICON_REGION = _region(1650, 148, 35, 32)
+QUEST_GLOW_PIXEL_THRESHOLD = round(30 * _SCALE_X * _SCALE_Y)
+EXP_SEARCH_REGION = _region(0, 1020, 260, 60)
+LEVEL_POWER_REGION = _region(0, 0, 230, 40)
 LEVEL_MIN = 1
 LEVEL_MAX = 200
 POWER_TOLERANCE_RATIO = 0.5
@@ -250,16 +298,17 @@ def extract_exp_pct(full_frame):
     mais mensagens empilhadas acima (Exp/Cobre ganhos), ele sobe na tela. Por
     isso procuramos a barra (linha quase 100% ciano) numa faixa maior e lemos
     o texto logo acima dela, em vez de usar coordenadas fixas."""
-    search = full_frame[1020:1080, 0:260]
+    s = EXP_SEARCH_REGION
+    search = full_frame[s["top"]:s["top"] + s["height"], s["left"]:s["left"] + s["width"]]
     b, g, r = cv2.split(search.astype(np.int16))
     cyan = ((b > 150) & (g > 150) & (r < 120)).astype(np.uint8)
 
     row_density = cyan.sum(axis=1)
-    bar_rows = np.where(row_density > 200)[0]
+    bar_rows = np.where(row_density > 0.75 * s["width"])[0]
     if len(bar_rows) == 0:
         return None
     bar_top = int(bar_rows[0])
-    text_top = max(0, bar_top - 18)
+    text_top = max(0, bar_top - scale_y(18))
     text_bottom = max(text_top + 1, bar_top - 1)
 
     mask = cyan[text_top:text_bottom] * 255
@@ -507,7 +556,8 @@ def extract_vigor_minutes(full_frame):
 
 
 def extract_stats(full_frame) -> dict:
-    lvl_power_crop = full_frame[0:40, 0:230]
+    lp = LEVEL_POWER_REGION
+    lvl_power_crop = full_frame[lp["top"]:lp["top"] + lp["height"], lp["left"]:lp["left"] + lp["width"]]
     lvl_power_text = pytesseract.image_to_string(lvl_power_crop, lang="por")
 
     lvl_match = re.search(r"Nv\.?\s*(\d+)", lvl_power_text)
