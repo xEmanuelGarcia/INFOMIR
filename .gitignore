@@ -1,0 +1,24 @@
+# segredos
+.env
+
+# calibracao e estado local (especifico da maquina/resolucao de cada um)
+config.json
+templates/
+known_zones.json
+last_stats.json
+*_state.json
+
+# capturas de tela e evidencias (dados de gameplay, nao codigo)
+*.png
+*.jpg
+history/
+
+# logs
+*.log
+
+# python
+__pycache__/
+*.pyc
+
+# pasta antiga vazia
+.dist/
