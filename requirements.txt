@@ -2,5 +2,5 @@ mss
 opencv-python
 numpy
 python-dotenv
-keyboard
+pytesseract
 requests
