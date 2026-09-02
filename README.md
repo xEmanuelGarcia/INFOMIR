@@ -106,9 +106,17 @@ real (não são otimizações prematuras — cada uma corrige um bug observado):
 **Testado com:** Python 3.13.5, Tesseract 5.5.0. As versões das bibliotecas Python estão fixadas
 em `requirements.txt`.
 
+0. Instale Python e o Tesseract OCR (se ainda não tiver). Mais fácil via `winget`
+   (Gerenciador de Pacotes do Windows, já vem com o Windows 10/11):
+   ```powershell
+   winget install Python.Python.3.13
+   winget install UB-Mannheim.TesseractOCR
+   ```
+   Ou baixando manualmente: [Python](https://www.python.org/downloads/windows/) /
+   [Tesseract](https://github.com/UB-Mannheim/tesseract/wiki).
 1. Instale as dependências: `pip install -r requirements.txt`
-2. Instale o [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) (Windows) e ajuste
-   `TESSERACT_PATH` em `common.py` se o caminho de instalação for diferente.
+2. Confirme que o Tesseract ficou em `C:\Program Files\Tesseract-OCR\tesseract.exe` (padrão) — se
+   não, ajuste `TESSERACT_PATH` em `common.py`.
 3. Copie `.env.example` para `.env` e preencha com o token do seu bot (crie um com
    [@BotFather](https://t.me/BotFather)) e o seu `chat_id` (mande uma mensagem pro bot e consulte
    `https://api.telegram.org/bot<TOKEN>/getUpdates`).
