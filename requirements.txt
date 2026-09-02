@@ -1,6 +1,6 @@
-mss
-opencv-python
-numpy
-python-dotenv
-pytesseract
-requests
+mss==10.2.0
+opencv-python==5.0.0.93
+numpy==2.5.1
+python-dotenv==1.0.0
+pytesseract==0.3.13
+requests==2.32.5

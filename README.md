@@ -83,6 +83,7 @@ real (não são otimizações prematuras — cada uma corrige um bug observado):
 | `calibrate.py` | Ferramenta interativa: você aperta ENTER com a tela de morte visível, seleciona a área na imagem, e ele salva o template de referência + a região de busca em `config.json`. |
 | `snapshot.py` | Só tira print da tela inteira continuamente pra um arquivo (`snapshot.png`) — usado pra inspeção/debug ao vivo, não faz parte do fluxo de alertas. |
 | `analyze_samples.py` | Ferramenta de regressão: roda a extração de stats contra todos os prints salvos (histórico de evidências + snapshots de eventos) de uma vez, pra achar onde a leitura ainda falha. |
+| `launcher.py` | Janela (tkinter) com Play/Pause pras tarefas agendadas, atalho pra calibração e visualização do log. |
 
 ## Como funciona por dentro
 
@@ -101,6 +102,9 @@ real (não são otimizações prematuras — cada uma corrige um bug observado):
    que só reseta quando a condição volta ao normal (ex: vigor sobe de novo, character ressuscita).
 
 ## Configuração
+
+**Testado com:** Python 3.13.5, Tesseract 5.5.0. As versões das bibliotecas Python estão fixadas
+em `requirements.txt`.
 
 1. Instale as dependências: `pip install -r requirements.txt`
 2. Instale o [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) (Windows) e ajuste
