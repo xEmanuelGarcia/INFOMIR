@@ -1,13 +1,17 @@
 # segredos
 .env
 
-# calibracao e estado local (especifico da maquina/resolucao de cada um)
-config.json
+# estado local (especifico da maquina/instalacao de cada um)
 settings.json
-templates/
 known_zones.json
+known_zones_*.json
 last_stats.json
+last_stats_*.json
 *_state.json
+*_state_*.json
+
+# arquivos internos do Claude Code (sessao local, nao faz parte do projeto)
+.claude/
 
 # build/empacotamento (gerados por pyinstaller/inno setup, nao sao codigo-fonte)
 build/

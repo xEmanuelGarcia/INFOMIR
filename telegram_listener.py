@@ -1,26 +1,28 @@
 """
 Fica escutando mensagens no bot do Telegram. Quando voce manda "/status" ou
-"status", ele responde com um print atual da tela + nivel/poder/XP.
+"status", ele responde com um print atual + nivel/poder/XP -- uma mensagem
+por conta configurada em settings.json["accounts"] (ou uma unica, no modo
+legado sem contas configuradas).
 """
 import logging
 import time
 
-import mss
-import numpy as np
 import requests
 
 from common import (
-    MONITOR_INDEX,
     TELEGRAM_CHAT_ID,
     TELEGRAM_TOKEN,
+    account_slug,
     extract_stats,
     format_stats_text,
+    get_frame,
+    load_settings,
     save_snapshot,
     send_telegram_photo,
+    set_account,
 )
 
 API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
-STATUS_SNAPSHOT_PATH = "status_snapshot.jpg"
 LOG_PATH = "telegram_listener.log"
 STATUS_COMMANDS = {"/status", "status"}
 
@@ -42,37 +44,53 @@ def get_updates(offset=None):
     return resp.json()["result"]
 
 
+def send_status(window_title: str, account_id: str, label: str):
+    set_account(account_id)
+    full = get_frame(window_title)
+    snapshot_path = f"status_snapshot_{account_id}.jpg" if account_id else "status_snapshot.jpg"
+    save_snapshot(snapshot_path, full)
+    stats = format_stats_text(extract_stats(full))
+    prefix = f"[{label}] " if label else ""
+    send_telegram_photo(snapshot_path, f"{prefix}Status atual:\n\n{stats}", log=log)
+
+
+def handle_status_command():
+    accounts = load_settings().get("accounts", [])
+    if not accounts:
+        send_status(None, "", "")
+        return
+    for acc in accounts:
+        label = acc.get("label", "")
+        send_status(acc.get("window_title", ""), account_slug(label), label)
+
+
 def main():
     initial = get_updates()
     offset = (initial[-1]["update_id"] + 1) if initial else None
     log.info("Ouvindo comandos no Telegram... (Ctrl+C para parar)")
 
-    with mss.MSS() as sct:
-        while True:
-            try:
-                updates = get_updates(offset)
-                for update in updates:
-                    offset = update["update_id"] + 1
-                    message = update.get("message")
-                    if not message or "text" not in message:
-                        continue
-                    if str(message["chat"]["id"]) != TELEGRAM_CHAT_ID:
-                        continue
+    while True:
+        try:
+            updates = get_updates(offset)
+            for update in updates:
+                offset = update["update_id"] + 1
+                message = update.get("message")
+                if not message or "text" not in message:
+                    continue
+                if str(message["chat"]["id"]) != TELEGRAM_CHAT_ID:
+                    continue
 
-                    text = message["text"].strip().lower()
-                    if text in STATUS_COMMANDS:
-                        log.info(f"comando recebido: {text}")
-                        full = np.array(sct.grab(sct.monitors[MONITOR_INDEX]))[:, :, :3]
-                        save_snapshot(STATUS_SNAPSHOT_PATH, full)
-                        stats = format_stats_text(extract_stats(full))
-                        send_telegram_photo(STATUS_SNAPSHOT_PATH, f"Status atual:\n\n{stats}", log=log)
+                text = message["text"].strip().lower()
+                if text in STATUS_COMMANDS:
+                    log.info(f"comando recebido: {text}")
+                    handle_status_command()
 
-            except KeyboardInterrupt:
-                log.info("Encerrando.")
-                break
-            except requests.RequestException as exc:
-                log.error(f"[erro] {exc}")
-                time.sleep(5)
+        except KeyboardInterrupt:
+            log.info("Encerrando.")
+            break
+        except requests.RequestException as exc:
+            log.error(f"[erro] {exc}")
+            time.sleep(5)
 
 
 if __name__ == "__main__":

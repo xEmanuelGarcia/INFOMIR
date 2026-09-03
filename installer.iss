@@ -28,7 +28,6 @@ Name: "desktopicon"; Description: "Criar atalho na área de trabalho"; GroupDesc
 [Files]
 Source: "dist\MIR4Companion.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: ".env.example"; DestDir: "{app}"; Flags: ignoreversion
-Source: "config.json.example"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

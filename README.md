@@ -8,8 +8,17 @@ sob demanda com nível, poder, XP%, mapa atual, XP/min e cobre/min.
 ## Por que foi feito assim
 
 **Não existe API oficial do MIR4.** A única forma de saber o que está acontecendo no jogo é
-capturar a tela (`mss`) e ler o texto/cores com OCR (`Tesseract`/`pytesseract`). Isso define
-praticamente todas as decisões de design abaixo.
+capturar a tela e ler o texto/cores com OCR (`Tesseract`/`pytesseract`). Isso define praticamente
+todas as decisões de design abaixo.
+
+**Captura via Windows.Graphics.Capture (`windows-capture`), não um print de tela comum.** Um print
+de tela normal (`mss`) só pega o que está visivelmente por cima na tela naquela área — se a janela
+do jogo estiver atrás de outra (comum ao monitorar 2 contas ao mesmo tempo), ele capturaria a
+janela errada. `PrintWindow` (a API mais antiga/simples pra capturar uma janela específica) foi
+testada e devolve uma imagem preta nesse jogo, por causa da renderização via GPU. A
+Windows.Graphics.Capture (a mesma API que OBS e o Xbox Game Bar usam) captura o conteúdo real da
+janela direto, independente do que está visível na tela — funciona mesmo com a janela coberta.
+`mss` continua como fallback (usado só se a janela do jogo não for encontrada).
 
 **Não automatiza nenhum input no jogo.** O sistema só lê a tela e manda mensagens — nunca clica,
 nunca aperta tecla. Automatizar ações no personagem (mesmo algo simples como apertar uma tecla
@@ -78,21 +87,36 @@ real (não são otimizações prematuras — cada uma corrige um bug observado):
 | Arquivo | O que faz |
 |---|---|
 | `common.py` | Toda a lógica compartilhada: captura, OCR, extração de stats, envio pro Telegram, e as máquinas de estado de cada tipo de alerta (morte, vigor, mapa, missão, cobre/min, XP/min). |
-| `watcher.py` | Loop principal. A cada ~1.5s: checa morte, vigor, mapa, cobre, missão do auto-play, objetivo da missão primária; a cada 30min manda um relatório periódico. |
-| `telegram_listener.py` | Fica ouvindo mensagens no bot (long polling) — responde `/status` com print + stats atuais. |
-| `calibrate.py` | Ferramenta interativa: você aperta ENTER com a tela de morte visível, seleciona a área na imagem, e ele salva o template de referência + a região de busca em `config.json`. |
-| `snapshot.py` | Só tira print da tela inteira continuamente pra um arquivo (`snapshot.png`) — usado pra inspeção/debug ao vivo, não faz parte do fluxo de alertas. |
+| `window_capture.py` | Localiza as janelas do jogo (processos `Mir4G.exe`/`Mir4S.exe` — instâncias extras de multi-conta rodam como `Mir4S.exe`) na tela, pra capturar só elas em vez do monitor inteiro. |
+| `gfx_capture.py` | Captura o conteúdo real de uma janela (Windows.Graphics.Capture) mesmo se ela estiver atrás de outra — necessário pra monitorar 2 contas ao mesmo tempo sem uma pegar o print da outra. |
+| `watcher.py` | Loop principal. A cada ~1.5s: checa morte, vigor, mapa, cobre, missão do auto-play, objetivo da missão primária; a cada 30min manda um relatório periódico. Uma instância por conta monitorada. |
+| `telegram_listener.py` | Fica ouvindo mensagens no bot (long polling) — responde `/status` com um print + stats por conta monitorada. |
+| `snapshot.py` | Só tira print da janela do jogo continuamente pra um arquivo (`snapshot.png`) — usado pra inspeção/debug ao vivo, não faz parte do fluxo de alertas. |
 | `analyze_samples.py` | Ferramenta de regressão: roda a extração de stats contra todos os prints salvos (histórico de evidências + snapshots de eventos) de uma vez, pra achar onde a leitura ainda falha. |
-| `launcher.py` | Janela (tkinter) com Play/Pause pras tarefas agendadas, atalho pra calibração e visualização do log. |
+| `launcher.py` | Janela (tkinter) com Play/Pause pras tarefas agendadas, gerenciador de contas monitoradas (se houver mais de uma janela do jogo aberta) e visualização do log. |
+
+## Monitorando mais de uma conta
+
+Com duas ou mais janelas do MIR4 abertas ao mesmo tempo (multi-conta), a aba Controle do launcher
+mostra um botão "Contas monitoradas" pra escolher quais janelas acompanhar e dar um nome pra cada
+uma (ex: o nick do personagem). Cada conta roda seu próprio `watcher.py`/`snapshot.py` (mirando só
+a janela dela, com estado — morte/vigor/missão/etc. — gravado em arquivos separados por conta, pra
+não se misturarem), enquanto o `telegram_listener.py` continua único (não dá pra ter dois processos
+puxando `getUpdates` do mesmo bot ao mesmo tempo) e manda uma mensagem por conta em cada alerta ou
+`/status`, prefixada com o nome dela. Sem nenhuma conta configurada, o sistema volta ao modo padrão
+de uma única instância (pega a primeira janela do MIR4 que encontrar).
 
 ## Como funciona por dentro
 
-1. **Detecção de morte**: `calibrate.py` grava um recorte da tela (o ícone/botão de ressuscitar)
-   como template. Em tempo real, `watcher.py` compara continuamente a região configurada contra
-   esse template (`cv2.matchTemplate`); acima de um threshold, é considerado "morto"; abaixo de um
-   threshold menor (histerese), "vivo" de novo — evita ficar alternando por ruído perto da borda.
-2. **Vigor, mapa, nível/poder/XP%**: recortes fixos (calibrados manualmente olhando a tela real,
-   ver coordenadas em `common.py`) + Tesseract, com as camadas de defesa listadas acima.
+1. **Detecção de morte**: procura o texto do diálogo de morte ("Ressuscitar na base") numa área
+   generosa no centro da janela do jogo via OCR (com uma máscara de brilho pra isolar o texto claro
+   do resto da cena e acelerar a leitura). Por ser baseado em texto (não numa imagem de referência
+   fixa), funciona em qualquer resolução/posição de janela sem precisar de calibração manual —
+   assim como todas as outras leituras. Uma mudança de estado (vivo↔morto) só é aceita depois de
+   se repetir em 2 leituras seguidas, pra não disparar por um frame de transição ou erro de OCR.
+2. **Vigor, mapa, nível/poder/XP%**: recortes calibrados numa resolução de referência (1920x1080)
+   e escalados automaticamente pro tamanho real da janela do jogo em tempo de execução (ver
+   `_region()`/`get_capture_base()` em `common.py`) + Tesseract, com as camadas de defesa listadas acima.
 3. **Cobre/min e XP/min**: cada leitura boa é comparada com a última salva (com timestamp);
    a diferença dividida pelo tempo decorrido dá a taxa. O acumulador de cobre soma qualquer
    `"Cobre +N"` visto no feed de mensagens desde a última leitura, evitando contar a mesma
@@ -120,27 +144,27 @@ em `requirements.txt`.
 3. Copie `.env.example` para `.env` e preencha com o token do seu bot (crie um com
    [@BotFather](https://t.me/BotFather)) e o seu `chat_id` (mande uma mensagem pro bot e consulte
    `https://api.telegram.org/bot<TOKEN>/getUpdates`).
-4. Copie `config.json.example` para `config.json` (os valores de `region` são específicos da sua
-   resolução/posição de tela — serão sobrescritos pela calibração).
-5. Com o jogo aberto em modo janela/borderless (não tela cheia exclusiva) e a tela de morte
-   visível, rode `python calibrate.py`.
-6. Rode `python watcher.py` e `python telegram_listener.py` (em terminais separados, ou como
-   tarefas agendadas — veja abaixo).
+4. Rode `python watcher.py` e `python telegram_listener.py` (em terminais separados, ou como
+   tarefas agendadas — veja abaixo). Não precisa de nenhuma calibração manual — a janela do jogo
+   é detectada automaticamente (processo `Mir4G.exe`) e todas as regiões escalam sozinhas.
 
 ### Rodar sem depender de terminal aberto (Windows Task Scheduler)
+
+O launcher (aba "Instalação" → "Registrar tarefas agendadas") já faz isso sozinho. As tarefas são
+registradas **sem nenhum gatilho** (não iniciam com o login do Windows) — o launcher é quem
+inicia/para elas (botões Play/Pause, que chamam `schtasks /run` e `/end`). Pra registrar na mão:
 
 ```powershell
 $pythonw = "CAMINHO\PARA\pythonw.exe"
 $workdir = "CAMINHO\PARA\ESTE\PROJETO"
 $user = "$env:USERDOMAIN\$env:USERNAME"
 
-$settings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+$settings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
 
 foreach ($pair in @{"MIR4Watcher"="watcher.py"; "MIR4TelegramListener"="telegram_listener.py"}.GetEnumerator()) {
     $action = New-ScheduledTaskAction -Execute $pythonw -Argument $pair.Value -WorkingDirectory $workdir
-    Register-ScheduledTask -TaskName $pair.Key -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force
+    Register-ScheduledTask -TaskName $pair.Key -Action $action -Settings $settings -Principal $principal -Force
 }
 ```
 
@@ -156,5 +180,6 @@ Depois: `Start-ScheduledTask -TaskName "MIR4Watcher"` (e o mesmo pro listener). 
   com muito efeito visual de combate — o sistema de confirmação por repetição filtra a maioria
   dos casos, mas leituras isoladas malformadas podem aparecer no histórico interno até se
   autocorrigirem na leitura seguinte.
-- Calibração (`config.json`, `templates/`) é específica da resolução e posição da janela do jogo
-  na sua tela — não é portável entre máquinas/monitores diferentes sem recalibrar.
+- Depende do jogo rodar como processo `Mir4G.exe` (cliente oficial do MIR4 pra Windows). Se o
+  jogo não for encontrado (ainda fechado, ou processo com outro nome), o sistema cai de volta pra
+  capturar o monitor inteiro em vez de travar.
